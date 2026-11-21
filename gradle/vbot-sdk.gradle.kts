@@ -1,10 +1,14 @@
 import java.io.File
 import java.io.IOException
 import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.security.MessageDigest
+import java.time.Duration
 import java.util.HexFormat
 
 val sdkVersion = "0.2.3"
@@ -38,20 +42,20 @@ if (checksums.any { (file, sha256) -> !matchesChecksum(versionDirectory.resolve(
     Files.createDirectories(versionDirectory.toPath())
     val staging = Files.createTempDirectory(versionDirectory.toPath(), "release-").toFile()
     try {
+        val client = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(15))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build()
         checksums.forEach { (name, sha256) ->
             val asset = staging.resolve(name)
-            val url = URI.create("https://github.com/$releaseRepository/releases/download/v$sdkVersion/$name").toURL()
-            try {
-                val connection = url.openConnection().apply {
-                    connectTimeout = 15_000
-                    readTimeout = 60_000
-                }
-                connection.getInputStream().use { input ->
-                    asset.outputStream().use { output -> input.copyTo(output) }
-                }
+            val url = URI.create("https://github.com/$releaseRepository/releases/download/v$sdkVersion/$name")
+            val request = HttpRequest.newBuilder(url).timeout(Duration.ofMinutes(3)).build()
+            val response = try {
+                client.send(request, HttpResponse.BodyHandlers.ofFile(asset.toPath()))
             } catch (error: IOException) {
                 throw GradleException("Could not download $name from $url", error)
             }
+            check(response.statusCode() == 200) { "Could not download $name from $url (HTTP ${response.statusCode()})" }
             check(matchesChecksum(asset, sha256)) { "VBot SDK checksum mismatch for $name" }
         }
         checksums.keys.forEach { name ->
