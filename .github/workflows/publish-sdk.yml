@@ -1,0 +1,82 @@
+name: Publish VBot SDK and verify Demo
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VBOT_PACKAGES_USER: ${{ github.actor }}
+      VBOT_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      MAVEN_REPOSITORY: https://maven.pkg.github.com/vitadynamics/vbot-android-sdk-demo
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          server-id: github
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+      - name: Publish AAR and verify registry download
+        shell: bash
+        run: |
+          set -euo pipefail
+          pom="$GITHUB_WORKSPACE/distribution/pom.xml"
+          version="$(python3 -c 'import sys, xml.etree.ElementTree as ET; print(ET.parse(sys.argv[1]).getroot().findtext("{*}version"))' "$pom")"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          artifact="vbot-sdk-$version.aar"
+          package_url="$MAVEN_REPOSITORY/com/vita/vbot/vbot-sdk/$version/$artifact"
+          cd "$(mktemp -d)"
+          gh release download "v$version" --repo "$GITHUB_REPOSITORY" --pattern "$artifact"
+          sha256sum --check "$GITHUB_WORKSPACE/distribution/sha256.txt"
+          python3 - "$artifact" <<'PY'
+          import io
+          import sys
+          from pathlib import PurePosixPath
+          from zipfile import ZipFile
+
+          def check(archive):
+              for entry in archive.namelist():
+                  if PurePosixPath(entry).suffix.lower() in {".java", ".kt", ".kts", ".proto", ".c", ".cc", ".cpp", ".h", ".hpp"}:
+                      raise SystemExit(f"Source file in SDK artifact: {entry}")
+                  if entry.endswith(".jar"):
+                      with ZipFile(io.BytesIO(archive.read(entry))) as jar:
+                          check(jar)
+
+          with ZipFile(sys.argv[1]) as aar:
+              check(aar)
+          PY
+
+          umask 077
+          printf 'machine maven.pkg.github.com login %s password %s\n' "$GITHUB_ACTOR" "$GITHUB_TOKEN" > registry.netrc
+          status="$(curl --silent --show-error --netrc-file registry.netrc --output registry.aar --write-out '%{http_code}' "$package_url")"
+          case "$status" in
+            200) cmp "$artifact" registry.aar ;;
+            404)
+              mvn --batch-mode --no-transfer-progress org.apache.maven.plugins:maven-deploy-plugin:3.1.4:deploy-file \
+                "-DrepositoryId=github" "-Durl=$MAVEN_REPOSITORY" "-DpomFile=$pom" "-Dfile=$artifact"
+              curl --fail --silent --show-error --retry 5 --retry-all-errors --retry-delay 3 \
+                --netrc-file registry.netrc --output registry.aar "$package_url"
+              cmp "$artifact" registry.aar
+              ;;
+            *) printf 'Package lookup returned HTTP %s\n' "$status" >&2; exit 1 ;;
+          esac
+          printf 'VBOT_VERIFIED_AAR=%s/registry.aar\n' "$PWD" >> "$GITHUB_ENV"
+      - name: Install Android build platform
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Build Demo from GitHub Packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon :demo:assembleDebug
+          cmp <(unzip -p "$VBOT_VERIFIED_AAR" jni/arm64-v8a/libvbot_sdk.so) \
+              <(unzip -p demo/build/outputs/apk/debug/demo-debug.apk lib/arm64-v8a/libvbot_sdk.so)
