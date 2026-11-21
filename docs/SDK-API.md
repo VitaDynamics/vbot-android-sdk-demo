@@ -4,32 +4,17 @@
 
 SDK 0.2.3 targets Android API 24 or newer on `arm64-v8a`. The reference consumer uses Kotlin 2.3.21 and compileSdk 36. The Maven artifact includes the C++ and Zenoh native libraries and declares its transitive dependencies.
 
-Add the repository to the consumer's `settings.gradle.kts`.
+Copy [vbot-sdk.gradle.kts](../gradle/vbot-sdk.gradle.kts) into the consumer project's `gradle/` directory. Keep the existing repositories in the consumer's `settings.gradle.kts` and apply the script after `dependencyResolutionManagement`.
 
 ```kotlin
-val packagesUser = providers.gradleProperty("vbotPackagesUser")
-    .orElse(providers.environmentVariable("VBOT_PACKAGES_USER"))
-val packagesToken = providers.gradleProperty("vbotPackagesToken")
-    .orElse(providers.environmentVariable("VBOT_PACKAGES_TOKEN"))
-
 dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        exclusiveContent {
-            forRepository {
-                maven {
-                    url = uri("https://maven.pkg.github.com/vitadynamics/vbot-android-sdk-demo")
-                    credentials {
-                        username = packagesUser.orNull
-                        password = packagesToken.orNull
-                    }
-                }
-            }
-            filter { includeModule("com.vita.vbot", "vbot-sdk") }
-        }
     }
 }
+
+apply(from = "gradle/vbot-sdk.gradle.kts")
 ```
 
 Add the dependency to the Android module's `build.gradle.kts`.
@@ -40,7 +25,7 @@ dependencies {
 }
 ```
 
-Supply the GitHub username and a classic token with `read:packages` through your user-level Gradle properties or environment. Your account needs read access to the private repository. In a GitHub Actions workflow in this repository, set `packages: read` or `packages: write` as appropriate and pass `GITHUB_TOKEN` to Gradle. [GitHub Packages for Gradle](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-gradle-registry).
+Install GitHub CLI and run `gh auth login --hostname github.com` with an account that has read access to the private repository. For CI in another repository, set `GH_TOKEN` to a token with Contents read access to the SDK Demo repository. The script downloads the AAR and its POM on the first build, verifies both files, and registers a local Maven cache dedicated to this dependency. Offline builds require the SDK and its transitive dependencies to be cached. [SDK release assets](https://github.com/VitaDynamics/vbot-android-sdk-demo/releases/tag/v0.2.3)
 
 ## Connect to a robot
 
