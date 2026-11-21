@@ -1,4 +1,6 @@
 import java.io.File
+import java.io.IOException
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -36,23 +38,21 @@ if (checksums.any { (file, sha256) -> !matchesChecksum(versionDirectory.resolve(
     Files.createDirectories(versionDirectory.toPath())
     val staging = Files.createTempDirectory(versionDirectory.toPath(), "release-").toFile()
     try {
-        val gh = providers.gradleProperty("vbotGitHubCli").getOrElse("gh")
-        val download = providers.exec {
-            commandLine(
-                gh, "release", "download", "v$sdkVersion", "--repo", releaseRepository,
-                "--dir", staging.absolutePath, "--pattern", "vbot-sdk-$sdkVersion.aar",
-                "--pattern", "vbot-sdk-$sdkVersion.pom",
-            )
-            isIgnoreExitValue = true
-        }
-        if (download.result.get().exitValue != 0) {
-            throw GradleException(
-                "Could not download VBot SDK $sdkVersion. Check GitHub CLI authentication and repository access. " +
-                    download.standardError.asText.get().trim(),
-            )
-        }
         checksums.forEach { (name, sha256) ->
-            check(matchesChecksum(staging.resolve(name), sha256)) { "VBot SDK checksum mismatch for $name" }
+            val asset = staging.resolve(name)
+            val url = URI.create("https://github.com/$releaseRepository/releases/download/v$sdkVersion/$name").toURL()
+            try {
+                val connection = url.openConnection().apply {
+                    connectTimeout = 15_000
+                    readTimeout = 60_000
+                }
+                connection.getInputStream().use { input ->
+                    asset.outputStream().use { output -> input.copyTo(output) }
+                }
+            } catch (error: IOException) {
+                throw GradleException("Could not download $name from $url", error)
+            }
+            check(matchesChecksum(asset, sha256)) { "VBot SDK checksum mismatch for $name" }
         }
         checksums.keys.forEach { name ->
             Files.move(staging.resolve(name).toPath(), versionDirectory.resolve(name).toPath(), ATOMIC_MOVE, REPLACE_EXISTING)

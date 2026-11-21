@@ -25,7 +25,7 @@ dependencies {
 }
 ```
 
-Install GitHub CLI and run `gh auth login --hostname github.com` with an account that has read access to the private repository. For CI in another repository, set `GH_TOKEN` to a token with Contents read access to the SDK Demo repository. The script downloads the AAR and its POM on the first build, verifies both files, and registers a local Maven cache dedicated to this dependency. Offline builds require the SDK and its transitive dependencies to be cached. [SDK release assets](https://github.com/VitaDynamics/vbot-android-sdk-demo/releases/tag/v0.2.3)
+The script downloads the AAR and its POM over HTTPS without GitHub credentials. On the first build it verifies the SHA-256 checksum of each file and stores both in a local Maven cache. Offline builds require the SDK and its transitive dependencies to be cached. [SDK release assets](https://github.com/VitaDynamics/vbot-android-sdk-demo/releases/tag/v0.2.3)
 
 ## Connect to a robot
 

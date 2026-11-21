@@ -1,6 +1,6 @@
 # VBot Android SDK Demo
 
-This English Android app demonstrates how to connect to an authorized VBot with Aorta or BLE, inspect robot and UWB state, send commands, and view the corresponding responses. Gradle retrieves the binary SDK from this repository's private GitHub release.
+This English Android app demonstrates how to connect to an authorized VBot with Aorta or BLE, inspect robot and UWB state, send commands, and view the corresponding responses. Gradle retrieves the binary SDK from this repository's public GitHub release.
 
 - Maven dependency `com.vita.vbot:vbot-sdk:0.2.3`
 - [SDK integration and API reference](docs/SDK-API.md)
@@ -9,12 +9,11 @@ This English Android app demonstrates how to connect to an authorized VBot with 
 
 ## Build and install
 
-Use JDK 21, Android SDK 36, and GitHub CLI. Run the app on an `arm64-v8a` Android device with API 24 or newer.
-
-Sign in to GitHub CLI with an account that has read access to this private repository. In CI, set `GH_TOKEN` to a credential with repository Contents read access. If Gradle cannot find the executable, pass `-PvbotGitHubCli=/absolute/path/to/gh`. [GitHub CLI authentication](https://cli.github.com/manual/gh_auth_login)
+Use Git, JDK 21, and Android SDK 36. Run the app on an `arm64-v8a` Android device with API 24 or newer.
 
 ```sh
-gh auth login --hostname github.com
+git clone https://github.com/VitaDynamics/vbot-android-sdk-demo.git
+cd vbot-android-sdk-demo
 ./gradlew :demo:assembleDebug
 adb install -r demo/build/outputs/apk/debug/demo-debug.apk
 ```
